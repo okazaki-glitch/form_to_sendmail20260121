@@ -13,9 +13,9 @@ function onFormSubmit(e) {
     return;
   }
 
-  const form = e.source;
-  const formTitle = form ? form.getTitle() : "フォーム";
-  const sheetUrl = getLinkedSpreadsheetUrl_(form);
+  const formInfo = getFormInfoFromEvent_(e);
+  const formTitle = formInfo.formTitle;
+  const sheetUrl = formInfo.sheetUrl;
   const subject = `${EMAIL_SUBJECT_PREFIX}: ${formTitle}`;
   const body = buildMailBody_(e, formTitle, sheetUrl);
 
@@ -97,6 +97,40 @@ function buildMailBody_(e, formTitle, sheetUrl) {
   }
 
   return lines.join("\n");
+}
+
+function getFormInfoFromEvent_(e) {
+  const source = e.source;
+  let form = null;
+  let formTitle = "フォーム";
+  let sheetUrl = "";
+
+  if (source) {
+    if (typeof source.getDestinationType === "function") {
+      // フォームの送信トリガー
+      form = source;
+      formTitle = source.getTitle();
+      sheetUrl = getLinkedSpreadsheetUrl_(form);
+    } else if (typeof source.getFormUrl === "function") {
+      // スプレッドシート側のフォーム送信トリガー
+      sheetUrl = source.getUrl();
+      const formUrl = source.getFormUrl();
+      if (formUrl) {
+        try {
+          form = FormApp.openByUrl(formUrl);
+          formTitle = form.getTitle();
+        } catch (error) {
+          formTitle = source.getTitle ? source.getTitle() : formTitle;
+        }
+      } else if (source.getTitle) {
+        formTitle = source.getTitle();
+      }
+    } else if (source.getTitle) {
+      formTitle = source.getTitle();
+    }
+  }
+
+  return { form, formTitle, sheetUrl };
 }
 
 function getLinkedSpreadsheetUrl_(form) {
