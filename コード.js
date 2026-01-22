@@ -1,5 +1,8 @@
 const NOTIFY_TO = "ntst118@hbg.ac.jp";
 const EMAIL_SUBJECT_PREFIX = "フォーム回答通知";
+const PROPERTY_FORM_ID = "FORM_ID";
+const PROPERTY_FORM_TITLE = "FORM_TITLE";
+const PROPERTY_SHEET_URL = "SHEET_URL";
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
@@ -27,15 +30,22 @@ function onFormSubmit(e) {
 }
 
 function setupOnFormSubmitTrigger() {
+  const form = FormApp.getActiveForm();
+  if (!form) {
+    return;
+  }
+
   // 既存トリガーを整理してから再作成する
   ScriptApp.getProjectTriggers()
     .filter((trigger) => trigger.getHandlerFunction() === "onFormSubmit")
     .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
 
   ScriptApp.newTrigger("onFormSubmit")
-    .forForm(FormApp.getActiveForm())
+    .forForm(form)
     .onFormSubmit()
     .create();
+
+  storeFormInfo_(form);
 }
 
 function setupOnFormSubmitTriggerFromSheet() {
@@ -55,6 +65,8 @@ function setupOnFormSubmitTriggerFromSheet() {
     .onFormSubmit()
     .create();
 
+  storeFormInfo_(form);
+
   SpreadsheetApp.getUi().alert("フォーム送信トリガーを再設定しました。");
 }
 
@@ -71,12 +83,35 @@ function getLinkedFormFromSheet_() {
   }
 }
 
+function storeFormInfo_(form) {
+  const properties = PropertiesService.getScriptProperties();
+  const sheetUrl = getLinkedSpreadsheetUrl_(form);
+  const formTitle = normalizeTitle_(form.getTitle()) || "フォーム";
+
+  properties.setProperties({
+    [PROPERTY_FORM_ID]: form.getId(),
+    [PROPERTY_FORM_TITLE]: formTitle,
+    [PROPERTY_SHEET_URL]: sheetUrl || "",
+  });
+}
+
+function getStoredFormInfo_() {
+  const properties = PropertiesService.getScriptProperties();
+
+  return {
+    formId: properties.getProperty(PROPERTY_FORM_ID) || "",
+    formTitle: properties.getProperty(PROPERTY_FORM_TITLE) || "",
+    sheetUrl: properties.getProperty(PROPERTY_SHEET_URL) || "",
+  };
+}
+
 function buildMailBody_(e, formTitle, sheetUrl) {
   const lines = [];
   const response = e.response;
   const namedValues = e.namedValues;
+  const safeFormTitle = normalizeTitle_(formTitle) || "フォーム";
 
-  lines.push(`フォーム名: ${formTitle}`);
+  lines.push(`フォーム名: ${safeFormTitle}`);
   if (response) {
     const timestamp = response.getTimestamp();
     if (timestamp) {
@@ -109,7 +144,7 @@ function getFormInfoFromEvent_(e) {
     if (typeof source.getDestinationType === "function") {
       // フォームの送信トリガー
       form = source;
-      formTitle = source.getTitle();
+      formTitle = normalizeTitle_(source.getTitle()) || formTitle;
       sheetUrl = getLinkedSpreadsheetUrl_(form);
     } else if (typeof source.getFormUrl === "function") {
       // スプレッドシート側のフォーム送信トリガー
@@ -118,19 +153,50 @@ function getFormInfoFromEvent_(e) {
       if (formUrl) {
         try {
           form = FormApp.openByUrl(formUrl);
-          formTitle = form.getTitle();
+          formTitle = normalizeTitle_(form.getTitle()) || formTitle;
         } catch (error) {
-          formTitle = source.getTitle ? source.getTitle() : formTitle;
+          if (source.getTitle) {
+            formTitle = normalizeTitle_(source.getTitle()) || formTitle;
+          }
         }
       } else if (source.getTitle) {
-        formTitle = source.getTitle();
+        formTitle = normalizeTitle_(source.getTitle()) || formTitle;
       }
     } else if (source.getTitle) {
-      formTitle = source.getTitle();
+      formTitle = normalizeTitle_(source.getTitle()) || formTitle;
+    }
+  }
+
+  const storedInfo = getStoredFormInfo_();
+  if ((!formTitle || formTitle === "フォーム") && storedInfo.formTitle) {
+    formTitle = storedInfo.formTitle;
+  }
+  if (!sheetUrl && storedInfo.sheetUrl) {
+    sheetUrl = storedInfo.sheetUrl;
+  }
+  if (!form && storedInfo.formId) {
+    try {
+      form = FormApp.openById(storedInfo.formId);
+      if ((!formTitle || formTitle === "フォーム") && form) {
+        formTitle = normalizeTitle_(form.getTitle()) || formTitle;
+      }
+      if (!sheetUrl && form) {
+        sheetUrl = getLinkedSpreadsheetUrl_(form);
+      }
+    } catch (error) {
+      // 取得失敗時は既存の値を優先
     }
   }
 
   return { form, formTitle, sheetUrl };
+}
+
+function normalizeTitle_(title) {
+  if (typeof title !== "string") {
+    return "";
+  }
+  const trimmed = title.trim();
+  return trimmed ? trimmed : "";
 }
 
 function getLinkedSpreadsheetUrl_(form) {
