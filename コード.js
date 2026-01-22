@@ -86,13 +86,15 @@ function getLinkedFormFromSheet_() {
 function storeFormInfo_(form) {
   const properties = PropertiesService.getScriptProperties();
   const sheetUrl = getLinkedSpreadsheetUrl_(form);
-  const formTitle = normalizeTitle_(form.getTitle()) || "フォーム";
+  const formTitle = normalizeTitle_(form.getTitle());
 
-  properties.setProperties({
-    [PROPERTY_FORM_ID]: form.getId(),
-    [PROPERTY_FORM_TITLE]: formTitle,
-    [PROPERTY_SHEET_URL]: sheetUrl || "",
-  });
+  properties.setProperty(PROPERTY_FORM_ID, form.getId());
+  if (formTitle) {
+    properties.setProperty(PROPERTY_FORM_TITLE, formTitle);
+  }
+  if (sheetUrl) {
+    properties.setProperty(PROPERTY_SHEET_URL, sheetUrl);
+  }
 }
 
 function getStoredFormInfo_() {
@@ -137,14 +139,14 @@ function buildMailBody_(e, formTitle, sheetUrl) {
 function getFormInfoFromEvent_(e) {
   const source = e.source;
   let form = null;
-  let formTitle = "フォーム";
+  let formTitle = "";
   let sheetUrl = "";
 
   if (source) {
     if (typeof source.getDestinationType === "function") {
       // フォームの送信トリガー
       form = source;
-      formTitle = normalizeTitle_(source.getTitle()) || formTitle;
+      formTitle = resolveFormTitleFromForm_(form);
       sheetUrl = getLinkedSpreadsheetUrl_(form);
     } else if (typeof source.getFormUrl === "function") {
       // スプレッドシート側のフォーム送信トリガー
@@ -153,7 +155,7 @@ function getFormInfoFromEvent_(e) {
       if (formUrl) {
         try {
           form = FormApp.openByUrl(formUrl);
-          formTitle = normalizeTitle_(form.getTitle()) || formTitle;
+          formTitle = resolveFormTitleFromForm_(form);
         } catch (error) {
           if (source.getTitle) {
             formTitle = normalizeTitle_(source.getTitle()) || formTitle;
@@ -168,7 +170,7 @@ function getFormInfoFromEvent_(e) {
   }
 
   const storedInfo = getStoredFormInfo_();
-  if ((!formTitle || formTitle === "フォーム") && storedInfo.formTitle) {
+  if (!formTitle && storedInfo.formTitle) {
     formTitle = storedInfo.formTitle;
   }
   if (!sheetUrl && storedInfo.sheetUrl) {
@@ -177,8 +179,8 @@ function getFormInfoFromEvent_(e) {
   if (!form && storedInfo.formId) {
     try {
       form = FormApp.openById(storedInfo.formId);
-      if ((!formTitle || formTitle === "フォーム") && form) {
-        formTitle = normalizeTitle_(form.getTitle()) || formTitle;
+      if (!formTitle && form) {
+        formTitle = resolveFormTitleFromForm_(form);
       }
       if (!sheetUrl && form) {
         sheetUrl = getLinkedSpreadsheetUrl_(form);
@@ -188,7 +190,11 @@ function getFormInfoFromEvent_(e) {
     }
   }
 
-  return { form, formTitle, sheetUrl };
+  if (form && (!storedInfo.formId || (!storedInfo.formTitle && formTitle) || (!storedInfo.sheetUrl && sheetUrl))) {
+    storeFormInfo_(form);
+  }
+
+  return { form, formTitle: formTitle || "フォーム", sheetUrl };
 }
 
 function normalizeTitle_(title) {
@@ -197,6 +203,28 @@ function normalizeTitle_(title) {
   }
   const trimmed = title.trim();
   return trimmed ? trimmed : "";
+}
+
+function resolveFormTitleFromForm_(form) {
+  if (!form) {
+    return "";
+  }
+
+  const directTitle = normalizeTitle_(form.getTitle());
+  if (directTitle) {
+    return directTitle;
+  }
+
+  try {
+    const formId = form.getId();
+    if (!formId) {
+      return "";
+    }
+    const reopened = FormApp.openById(formId);
+    return normalizeTitle_(reopened.getTitle());
+  } catch (error) {
+    return "";
+  }
 }
 
 function getLinkedSpreadsheetUrl_(form) {
