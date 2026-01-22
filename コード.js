@@ -1,4 +1,4 @@
-const NOTIFY_TO = "your-address@example.com";
+const NOTIFY_TO = "ntst118@hbg.ac.jp";
 const EMAIL_SUBJECT_PREFIX = "フォーム回答通知";
 
 function onOpen() {
