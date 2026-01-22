@@ -1,6 +1,5 @@
 const NOTIFY_TO = "ntst118@hbg.ac.jp";
 const EMAIL_SUBJECT_PREFIX = "フォーム回答通知";
-const PROPERTY_FORM_ID = "FORM_ID";
 const PROPERTY_FORM_TITLE = "FORM_TITLE";
 const PROPERTY_SHEET_URL = "SHEET_URL";
 
@@ -35,16 +34,7 @@ function setupOnFormSubmitTrigger() {
     return;
   }
 
-  // 既存トリガーを整理してから再作成する
-  ScriptApp.getProjectTriggers()
-    .filter((trigger) => trigger.getHandlerFunction() === "onFormSubmit")
-    .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
-
-  ScriptApp.newTrigger("onFormSubmit")
-    .forForm(form)
-    .onFormSubmit()
-    .create();
-
+  resetOnFormSubmitTrigger_(form);
   storeFormInfo_(form);
 }
 
@@ -55,16 +45,7 @@ function setupOnFormSubmitTriggerFromSheet() {
     return;
   }
 
-  // 既存トリガーを整理してから再作成する
-  ScriptApp.getProjectTriggers()
-    .filter((trigger) => trigger.getHandlerFunction() === "onFormSubmit")
-    .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
-
-  ScriptApp.newTrigger("onFormSubmit")
-    .forForm(form)
-    .onFormSubmit()
-    .create();
-
+  resetOnFormSubmitTrigger_(form);
   storeFormInfo_(form);
 
   SpreadsheetApp.getUi().alert("フォーム送信トリガーを再設定しました。");
@@ -88,7 +69,6 @@ function storeFormInfo_(form) {
   const sheetUrl = getLinkedSpreadsheetUrl_(form);
   const formTitle = normalizeTitle_(form.getTitle());
 
-  properties.setProperty(PROPERTY_FORM_ID, form.getId());
   if (formTitle) {
     properties.setProperty(PROPERTY_FORM_TITLE, formTitle);
   }
@@ -101,7 +81,6 @@ function getStoredFormInfo_() {
   const properties = PropertiesService.getScriptProperties();
 
   return {
-    formId: properties.getProperty(PROPERTY_FORM_ID) || "",
     formTitle: properties.getProperty(PROPERTY_FORM_TITLE) || "",
     sheetUrl: properties.getProperty(PROPERTY_SHEET_URL) || "",
   };
@@ -138,24 +117,22 @@ function buildMailBody_(e, formTitle, sheetUrl) {
 
 function getFormInfoFromEvent_(e) {
   const source = e.source;
-  let form = null;
   let formTitle = "";
   let sheetUrl = "";
 
   if (source) {
     if (typeof source.getDestinationType === "function") {
       // フォームの送信トリガー
-      form = source;
-      formTitle = resolveFormTitleFromForm_(form);
-      sheetUrl = getLinkedSpreadsheetUrl_(form);
+      formTitle = normalizeTitle_(source.getTitle());
+      sheetUrl = getLinkedSpreadsheetUrl_(source);
     } else if (typeof source.getFormUrl === "function") {
       // スプレッドシート側のフォーム送信トリガー
       sheetUrl = source.getUrl();
       const formUrl = source.getFormUrl();
       if (formUrl) {
         try {
-          form = FormApp.openByUrl(formUrl);
-          formTitle = resolveFormTitleFromForm_(form);
+          const form = FormApp.openByUrl(formUrl);
+          formTitle = normalizeTitle_(form.getTitle());
         } catch (error) {
           if (source.getTitle) {
             formTitle = normalizeTitle_(source.getTitle()) || formTitle;
@@ -176,25 +153,8 @@ function getFormInfoFromEvent_(e) {
   if (!sheetUrl && storedInfo.sheetUrl) {
     sheetUrl = storedInfo.sheetUrl;
   }
-  if (!form && storedInfo.formId) {
-    try {
-      form = FormApp.openById(storedInfo.formId);
-      if (!formTitle && form) {
-        formTitle = resolveFormTitleFromForm_(form);
-      }
-      if (!sheetUrl && form) {
-        sheetUrl = getLinkedSpreadsheetUrl_(form);
-      }
-    } catch (error) {
-      // 取得失敗時は既存の値を優先
-    }
-  }
 
-  if (form && (!storedInfo.formId || (!storedInfo.formTitle && formTitle) || (!storedInfo.sheetUrl && sheetUrl))) {
-    storeFormInfo_(form);
-  }
-
-  return { form, formTitle: formTitle || "フォーム", sheetUrl };
+  return { formTitle: formTitle || "フォーム", sheetUrl };
 }
 
 function normalizeTitle_(title) {
@@ -203,28 +163,6 @@ function normalizeTitle_(title) {
   }
   const trimmed = title.trim();
   return trimmed ? trimmed : "";
-}
-
-function resolveFormTitleFromForm_(form) {
-  if (!form) {
-    return "";
-  }
-
-  const directTitle = normalizeTitle_(form.getTitle());
-  if (directTitle) {
-    return directTitle;
-  }
-
-  try {
-    const formId = form.getId();
-    if (!formId) {
-      return "";
-    }
-    const reopened = FormApp.openById(formId);
-    return normalizeTitle_(reopened.getTitle());
-  } catch (error) {
-    return "";
-  }
 }
 
 function getLinkedSpreadsheetUrl_(form) {
@@ -244,6 +182,18 @@ function getLinkedSpreadsheetUrl_(form) {
   } catch (error) {
     return "";
   }
+}
+
+function resetOnFormSubmitTrigger_(form) {
+  // 既存トリガーを整理してから再作成する
+  ScriptApp.getProjectTriggers()
+    .filter((trigger) => trigger.getHandlerFunction() === "onFormSubmit")
+    .forEach((trigger) => ScriptApp.deleteTrigger(trigger));
+
+  ScriptApp.newTrigger("onFormSubmit")
+    .forForm(form)
+    .onFormSubmit()
+    .create();
 }
 
 function formatNamedValues_(namedValues, response) {
