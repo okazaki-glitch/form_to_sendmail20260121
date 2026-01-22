@@ -77,9 +77,6 @@ function buildMailBody_(e, formTitle, sheetUrl) {
   const namedValues = e.namedValues;
 
   lines.push(`フォーム名: ${formTitle}`);
-  if (sheetUrl) {
-    lines.push(`スプレッドシートを開く: ${sheetUrl}`);
-  }
   if (response) {
     const timestamp = response.getTimestamp();
     if (timestamp) {
@@ -94,6 +91,10 @@ function buildMailBody_(e, formTitle, sheetUrl) {
   lines.push("");
   lines.push("回答内容:");
   lines.push(formatNamedValues_(namedValues, response));
+  if (sheetUrl) {
+    lines.push("");
+    lines.push(`スプレッドシートを開く: ${sheetUrl}`);
+  }
 
   return lines.join("\n");
 }
