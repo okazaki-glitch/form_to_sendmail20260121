@@ -73,6 +73,7 @@ function getLinkedFormFromSheet_() {
 function buildMailBody_(e, formTitle) {
   const lines = [];
   const response = e.response;
+  const namedValues = e.namedValues;
 
   lines.push(`フォーム名: ${formTitle}`);
   if (response) {
@@ -88,21 +89,35 @@ function buildMailBody_(e, formTitle) {
 
   lines.push("");
   lines.push("回答内容:");
-  lines.push(formatNamedValues_(e.namedValues));
+  lines.push(formatNamedValues_(namedValues, response));
 
   return lines.join("\n");
 }
 
-function formatNamedValues_(namedValues) {
-  if (!namedValues) {
-    return "(回答データが取得できませんでした)";
+function formatNamedValues_(namedValues, response) {
+  if (namedValues && Object.keys(namedValues).length > 0) {
+    return Object.keys(namedValues)
+      .map((question) => {
+        const answers = namedValues[question];
+        const answerText = Array.isArray(answers) ? answers.join(", ") : answers;
+        return `- ${question}: ${answerText}`;
+      })
+      .join("\n");
   }
 
-  return Object.keys(namedValues)
-    .map((question) => {
-      const answers = namedValues[question];
-      const answerText = Array.isArray(answers) ? answers.join(", ") : answers;
-      return `- ${question}: ${answerText}`;
-    })
-    .join("\n");
+  if (response) {
+    const itemResponses = response.getItemResponses();
+    if (itemResponses.length > 0) {
+      return itemResponses
+        .map((itemResponse) => {
+          const question = itemResponse.getItem().getTitle();
+          const answer = itemResponse.getResponse();
+          const answerText = Array.isArray(answer) ? answer.join(", ") : answer;
+          return `- ${question}: ${answerText}`;
+        })
+        .join("\n");
+    }
+  }
+
+  return "(回答データが取得できませんでした)";
 }
