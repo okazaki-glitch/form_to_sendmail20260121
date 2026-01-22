@@ -15,8 +15,9 @@ function onFormSubmit(e) {
 
   const form = e.source;
   const formTitle = form ? form.getTitle() : "フォーム";
+  const sheetUrl = getLinkedSpreadsheetUrl_(form);
   const subject = `${EMAIL_SUBJECT_PREFIX}: ${formTitle}`;
-  const body = buildMailBody_(e, formTitle);
+  const body = buildMailBody_(e, formTitle, sheetUrl);
 
   MailApp.sendEmail({
     to: NOTIFY_TO,
@@ -70,12 +71,15 @@ function getLinkedFormFromSheet_() {
   }
 }
 
-function buildMailBody_(e, formTitle) {
+function buildMailBody_(e, formTitle, sheetUrl) {
   const lines = [];
   const response = e.response;
   const namedValues = e.namedValues;
 
   lines.push(`フォーム名: ${formTitle}`);
+  if (sheetUrl) {
+    lines.push(`スプレッドシートを開く: ${sheetUrl}`);
+  }
   if (response) {
     const timestamp = response.getTimestamp();
     if (timestamp) {
@@ -92,6 +96,25 @@ function buildMailBody_(e, formTitle) {
   lines.push(formatNamedValues_(namedValues, response));
 
   return lines.join("\n");
+}
+
+function getLinkedSpreadsheetUrl_(form) {
+  if (!form) {
+    return "";
+  }
+
+  try {
+    if (form.getDestinationType() !== FormApp.DestinationType.SPREADSHEET) {
+      return "";
+    }
+    const spreadsheetId = form.getDestinationId();
+    if (!spreadsheetId) {
+      return "";
+    }
+    return SpreadsheetApp.openById(spreadsheetId).getUrl();
+  } catch (error) {
+    return "";
+  }
 }
 
 function formatNamedValues_(namedValues, response) {
